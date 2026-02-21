@@ -1,0 +1,189 @@
+version: 2
+
+# -----------------------
+# BRONZE (sources)
+# -----------------------
+sources:
+  - name: bronze
+    schema: bronze
+    description: "Raw Airbnb + ABS Census data loaded by Airflow."
+    tables:
+      - name: r_f_listing
+        description: "Raw Airbnb listing records per scrape."
+        columns:
+          - name: LISTING_ID
+          - name: SCRAPED_DATE
+
+      - name: r_d_2016census_g01_nsw_lga
+        description: "ABS Census 2016 G01 (age/sex/household) by NSW LGA."
+        columns:
+          - name: "LGA_CODE_2016"
+
+      - name: r_d_2016census_g02_nsw_lga
+        description: "ABS Census 2016 G02 (education, family, etc.) by NSW LGA."
+        columns:
+          - name: "LGA_CODE_2016"
+
+      - name: r_d_nsw_lga_suburb
+        description: "Raw NSW suburb → LGA mapping."
+        columns:
+          - name: "LGA_NAME"
+          - name: "SUBURB_NAME"
+
+      - name: r_d_nsw_lga_code
+        description: "Raw NSW suburb → LGA mapping."
+        columns:
+          - name: "LGA_CODE"
+          - name: "LGA_NAME"
+
+# -----------------------
+# SILVER (staging / cleaned)
+# -----------------------
+models:
+  - name: stg_listing
+    description: "Clean, typed listing records from bronze.r_f_listing."
+    columns:
+      - name: listing_id
+      - name: scraped_date
+      - name: host_id
+      - name: property_type
+      - name: room_type
+      - name: accommodates
+      - name: listing_neighbourhood
+      - name: price
+      - name: has_availability
+      - name: availability_30
+      - name: number_of_reviews
+      - name: review_scores_rating
+
+  - name: stg_lga_suburb
+    description: "Suburb → LGA mapping for Sydney."
+    columns:
+      - name: suburb_name
+        tests: [not_null, unique]
+      - name: lga_name
+
+  - name: stg_lga_code
+    description: "Stable 5-digit LGA code and canonical LGA name."
+    columns:
+      - name: lga_code
+        tests: [not_null, unique]
+      - name: lga_name
+
+  - name: stg_census_g01
+    description: "Normalized ABS G01 metrics keyed by LGA code."
+    columns:
+      - name: lga_code
+      - name: lga_name
+
+
+  - name: stg_census_g02
+    description: "Normalized ABS G02 metrics keyed by LGA code."
+    columns:
+      - name: lga_code
+      - name: lga_name
+
+# -----------------------
+# GOLD / STAR (conformed dims from snapshots & refs)
+# -----------------------
+  - name: dim_snap_listing
+    description: >
+      SCD2 listing dimension from snapshot. Includes host_id and month validity
+      windows to align with monthly marts.
+    columns:
+      - name: listing_version_sk
+        tests: [not_null, unique]
+      - name: listing_id
+      - name: host_id
+      - name: dbt_valid_from
+      - name: dbt_valid_to
+      - name: valid_from_month
+      - name: valid_to_month
+
+  - name: dim_snap_host
+    description: >
+      SCD2 host dimension from snapshot with month validity and superhost flag.
+    columns:
+      - name: host_version_sk
+        tests: [not_null, unique]
+      - name: host_id
+      - name: host_neighbourhood
+      - name: host_is_superhost
+      - name: valid_from_month
+      - name: valid_to_month
+
+  - name: dim_suburb
+    description: "Reference list of suburbs with LGA names."
+    columns:
+      - name: suburb_name
+        tests: [not_null, unique]
+      - name: lga_name
+
+  - name: dim_lga
+    description: "Reference LGA codes and names."
+    columns:
+      - name: lga_code
+        tests: [not_null, unique]
+      - name: lga_name
+
+  - name: dim_census_g01
+    description: "Census G01 metrics at LGA level (derived from stg_census_g01)."
+    columns:
+      - name: lga_code
+ 
+  - name: dim_census_g02
+    description: "Census G02 metrics at LGA level (derived from stg_census_g02)."
+    columns:
+      - name: lga_code
+ 
+  - name: dim_availability_flag
+    description: "Helper dimension that standardizes availability flags/states."
+    columns:
+      - name: flag_key
+        tests: [not_null, unique]
+
+  - name: dim_superhost_flag
+    description: "Helper dimension that standardizes superhost flags/states."
+    columns:
+      - name: flag_key
+        tests: [not_null, unique]
+
+# -----------------------
+# GOLD / MART (analytics-ready)
+# -----------------------
+  - name: dm_listing_neighbourhood
+    description: >
+      Per listing_neighbourhood & month: active listings rate, price stats,
+      distinct hosts, superhost rate, avg review rating (active), pct change
+      active/inactive, total stays, avg est. revenue per active listing.
+    columns:
+      - name: listing_neighbourhood
+      - name: month_start
+
+  - name: dm_property_type
+    description: >
+      Per property_type, room_type, accommodates & month: same KPI set as above.
+    columns:
+      - name: property_type
+      - name: room_type
+      - name: accommodates
+      - name: month_start
+
+
+  - name: dm_host_neighbourhood
+    description: >
+      Per host_neighbourhood_lga & month: distinct hosts, estimated revenue,
+      and revenue per distinct host (month-expanded via SCD2).
+    columns:
+      - name: host_neighbourhood_lga
+      - name: month_start
+
+# -----------------------
+# SNAPSHOTS (to show up in docs/lineage)
+# -----------------------
+snapshots:
+  - name: snap_listing
+    description: "SCD2 snapshot of listings sourced from stg_listing."
+  - name: snap_host
+    description: "SCD2 snapshot of hosts sourced from stg_listing."
+

@@ -1,0 +1,31 @@
+name: "bde_at3"
+version: "1.0.0"
+config-version: 2
+
+profile: "default"
+
+model-paths: ["models"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  bde_at3:
+    silver:
+      +schema: silver
+      +materialized: table
+
+    gold:
+      +schema: gold
+      +materialized: table
+      star:
+        +materialized: table
+      mart:
+        +materialized: view
+
+snapshots:
+  bde_at3:
+    +target_schema: silver
+

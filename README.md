@@ -1,4 +1,4 @@
-# Airbnb ELT Pipeline on GCP
+# Airbnb Sydney ELT Pipeline on GCP with Airflow + dbt (Bronze–Silver–Gold)
 ### Production-Grade Data Engineering Project using Airflow, PostgreSQL, and dbt
 
 This project builds an end-to-end cloud ELT pipeline to analyze Airbnb performance across Greater Sydney. It integrates Airbnb listings data with Australian Census demographics using a Medallion architecture and automated orchestration.

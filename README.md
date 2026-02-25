@@ -1,112 +1,126 @@
-Airbnb ELT Pipeline on GCP
+# Airbnb ELT Pipeline on GCP
+### Production-Grade Data Engineering Project using Airflow, PostgreSQL, and dbt
 
-A production-grade ELT (Extract, Load, Transform) pipeline built on Google Cloud Platform to analyze Airbnb listing performance across Greater Sydney. The system integrates Airbnb listings data with Australian Census demographics using Apache Airflow for orchestration, PostgreSQL for warehousing, and dbt for transformation and modeling. The architecture follows the Medallion design pattern (Bronze → Silver → Gold) and implements Slowly Changing Dimension Type 2 (SCD2) tracking for historical accuracy.
+This project builds an end-to-end cloud ELT pipeline to analyze Airbnb performance across Greater Sydney. It integrates Airbnb listings data with Australian Census demographics using a Medallion architecture and automated orchestration.
 
-Features
+---
 
-End-to-end ELT pipeline using GCP services
+## 1. Project Overview
+The goal of this project is to:
+* **Ingest** monthly Airbnb listing data.
+* **Integrate** demographic Census data.
+* **Implement** Slowly Changing Dimensions (SCD Type 2).
+* **Build** analytical marts for business insights.
+* **Automate** the full pipeline in production.
 
-Automated orchestration with Apache Airflow
+The system runs on Google Cloud Platform and follows modern data engineering best practices.
 
-Medallion architecture (Bronze, Silver, Gold layers)
+---
 
-SCD Type 2 implementation using dbt snapshots
+## 2. System Architecture
+The pipeline follows a Medallion architecture: **Bronze → Silver → Gold**.
 
-Idempotent monthly ingestion with duplicate prevention
+### Components
+* **Google Cloud Storage** – Raw CSV storage.
+* **Airflow (Cloud Composer)** – Orchestration.
+* **PostgreSQL (Cloud SQL)** – Data warehouse.
+* **dbt** – Transformation and modeling.
+* **Snapshots** – SCD Type 2 tracking.
 
-Star schema data warehouse design
+### End-to-End Flow
+1. Raw CSV files are uploaded to Cloud Storage.
+2. **Airflow** loads raw data into the Bronze schema.
+3. **dbt** transforms data into the Silver staging layer.
+4. **Snapshots** capture historical attribute changes.
+5. **Gold** star schema and marts are built.
+6. Production runs are triggered via Airflow.
 
-Analytical marts for business reporting
+---
 
-Development and production environment separation
+## 3. Airflow Orchestration
+The DAG `load_to_bronze_parallel_dbt_2` manages ingestion and production builds.
 
-Data quality validation with dbt tests
+### Task Breakdown
+* `step_1_preflight`: Validate folders and DB connection.
+* `step_2_assert_tables`: Confirm Bronze tables exist.
+* `step_3_list_dimensions` → `step_4_load_dimensions`
+* `step_5_list_facts` → `step_6_load_facts`
+* `step_6b_barrier`: Synchronization checkpoint.
+* **Trigger dbt production job**.
 
-Structured SQL-based analytical queries
+### Airflow DAG
+<p align="center"> 
+  <img src="architecture/airflow_pipeline_diagram.png" width="850" alt="Airflow DAG Diagram"> 
+</p>
 
-Installation
-Prerequisites
+### Engineering Features
+* **Idempotency**: Monthly ingestion is safe to retry.
+* **Duplicate Prevention**: Processed files are moved via an archive strategy.
+* **Schema Safety**: Explicit column `COPY` commands prevent schema drift.
+* **Normalization**: Safe ISO date normalization.
+* **Isolation**: Separation of Development vs. Production schemas.
 
-Python 3.9+
+---
 
-PostgreSQL 13+
+## 4. dbt Data Warehouse Design
 
-dbt (dbt-core and dbt-postgres)
+### Bronze Layer
+* **Raw ingestion layer**: Source-aligned schema.
+* **Resilience**: Dates stored as `TEXT` to prevent early parsing failures.
+* **Pure Data**: No business logic applied.
 
-Apache Airflow 2.x
+### Silver Layer
+Cleaned and standardized staging models including type casting, price conversion to numeric, and boolean normalization.
+* **Main models**: `stg_listing`, `stg_census_g01`, `stg_census_g02`, `stg_lga_code`, `stg_lga_suburb`.
 
-Git
+### Snapshots (SCD Type 2)
+Historical tracking for `snap_listing` and `snap_host`. Each snapshot generates `dbt_valid_from` and `dbt_valid_to`, enabling time-aware joins in analytical models.
 
-1. Clone the Repository
-git clone https://github.com/your-username/airbnb-elt-gcp-airflow-dbt.git
-cd airbnb-elt-gcp-airflow-dbt
-2. Set Up Python Environment
-python -m venv venv
-source venv/bin/activate  # macOS/Linux
-# venv\Scripts\activate   # Windows
+### Gold Layer
+* **Star Schema Dimensions**: `dim_lga`, `dim_suburb`, `dim_census_g01`, `dim_snap_listing`, etc.
+* **Analytical Marts**: `dm_listing_neighbourhood`, `dm_property_type`, `dm_host_neighbourhood`.
 
-pip install -r requirements.txt
-3. Configure PostgreSQL
+### dbt Lineage Graph
+<p align="center"> 
+  <img src="architecture/dbt_lineage.png" width="850" alt="dbt Lineage Graph"> 
+</p>
 
-Create a database and required schemas:
+---
 
-CREATE DATABASE airbnb_dw;
+## 5. Data Quality & Testing
+* **dbt tests**: `not_null`, `unique`, and relationship integrity tests.
+* **Source Freshness**: Monitoring data updates.
+* **Target Control**: Controlled dev and prod targets for deployment safety.
 
-Update your Airflow and dbt connection configurations to point to the database.
+---
 
-4. Install dbt Dependencies
-cd dbt
-dbt deps
-5. Configure Airflow
+## 6. Business Insights Generated
+* **Correlation**: Revenue positively correlates with median age ($r = 0.66$).
+* **Geography**: Premium coastal LGAs significantly outperform outer metro regions.
+* **Hosts**: 77% of multi-listing hosts operate within a single LGA.
+* **Sustainability**: 80%+ of single-listing hosts in premium LGAs generate enough revenue to cover annual mortgage repayments.
 
-Initialize Airflow:
+---
 
-export AIRFLOW_HOME=~/airflow
-airflow db init
+## 7. Key Engineering Decisions
+* **Text-First Bronze**: Stored date fields as `TEXT` to avoid ingestion failures.
+* **Guardrails**: Implemented `MONTH_YEAR` guards for idempotent loads.
+* **Storage Management**: Archived processed files to prevent reprocessing.
+* **SCD Type 2**: Used dbt snapshots for historical state tracking.
 
-Copy the DAG file:
+---
 
-cp airflow/load_to_bronze_parallel_dbt_2.py $AIRFLOW_HOME/dags/
+## 8. Tech Stack
+* **Language**: Python, SQL
+* **Orchestration**: Apache Airflow
+* **Database**: PostgreSQL
+* **Transformation**: dbt (data build tool)
+* **Cloud**: Google Cloud Platform (GCS, Cloud SQL, Composer)
 
-Start Airflow services:
+---
 
-airflow webserver --port 8080
-airflow scheduler
-Usage Examples
-Run Bronze Ingestion via Airflow
-
-Trigger the DAG from the Airflow UI or CLI:
-
-airflow dags trigger load_to_bronze_parallel_dbt_2
-Run dbt Models (Development)
-cd dbt
-dbt run --select silver
-dbt snapshot
-dbt run --select gold
-dbt test
-Example Analytical Query
-SELECT
-    lga_name,
-    AVG(avg_est_rev_per_active) AS avg_revenue
-FROM analytics_gold.dm_listing_neighbourhood
-GROUP BY lga_name
-ORDER BY avg_revenue DESC;
-Example dbt Snapshot (SCD Type 2)
-{% snapshot snap_listing %}
-
-{{
-  config(
-    target_schema='silver',
-    unique_key='listing_id',
-    strategy='timestamp',
-    updated_at='scraped_date'
-  )
-}}
-
-SELECT * FROM {{ ref('stg_listing') }}
-
-{% endsnapshot %}
-Project Structure
+## 9. Project Structure
+```text
 airbnb-elt-gcp-airflow-dbt/
 │
 ├── airflow/
@@ -114,8 +128,6 @@ airbnb-elt-gcp-airflow-dbt/
 │
 ├── dbt/
 │   ├── models/
-│   │   ├── silver/
-│   │   └── gold/
 │   ├── snapshots/
 │   ├── dbt_project.yml
 │   └── schema.yml
@@ -130,3 +142,10 @@ airbnb-elt-gcp-airflow-dbt/
 │
 └── docs/
     └── full_project_report.pdf
+```
+---
+
+## 10. Project Impact
+```text
+This project demonstrates a production-grade ELT architecture including cloud-native engineering, automated orchestration, star schema modeling, and SCD Type 2 implementation for real-world business analytics.
+```
